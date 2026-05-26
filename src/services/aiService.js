@@ -1,0 +1,57 @@
+import fetch from 'node-fetch'
+
+const SYSTEM_PROMPT = `You are an academic study assistant. Analyze the provided notes and return a structured JSON response with exactly these three fields:
+- overview: A 3-sentence summary of the main topic
+- keyConcepts: An array of exactly 5 key concepts as strings
+- examQuestions: An array of exactly 2 likely exam questions as strings
+
+Return ONLY valid JSON. No markdown. No explanation. Just the JSON object.`
+
+export async function summarizeNote(noteContent, userId) {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://noteai.app',
+      'X-Title': 'NoteAI'
+    },
+    body: JSON.stringify({
+      model: 'openai/gpt-4o-mini',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: noteContent }
+      ],
+      max_tokens: 500,
+      temperature: 0.3
+    })
+  })
+
+  const data = await response.json()
+
+  const usage = data.usage
+  if (usage) {
+    console.log('[AI_USAGE]', JSON.stringify({
+      timestamp: new Date().toISOString(),
+      userId,
+      model: 'openai/gpt-4o-mini',
+      promptTokens: usage.prompt_tokens,
+      completionTokens: usage.completion_tokens,
+      totalTokens: usage.total_tokens,
+      endpoint: 'summarize_note'
+    }))
+  }
+
+  if (!data.choices || !data.choices[0]) {
+    throw new Error(`Invalid LLM response: ${JSON.stringify(data)}`)
+  }
+
+  const content = data.choices[0].message.content
+
+  try {
+    return JSON.parse(content)
+  } catch {
+    // If the model returned non-JSON, return as plain text
+    return { overview: content, keyConcepts: [], examQuestions: [] }
+  }
+}
